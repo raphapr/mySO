@@ -1,0 +1,157 @@
+mov ax, 0x07c0
+mov ds, ax
+
+    push bp
+    mov bp,sp
+
+    call cls
+    push 0x01         ; coluna 1
+    push 0x0c         ; linha 12
+    call set_pos
+    push msg          ; "meu bootloader"
+    call print
+    push 0x1e         ; coluna 30
+    push 0x0e         ; linha 14
+    call set_pos
+    push msg2         ; "carregando kernel"
+    call print
+
+    call loadkernel
+    
+    cli ; desabilita as interrupções
+
+    call load_gdt ;carrega a tabela de GDT 
+
+    call switchMP ;entra no modo protegido e salta para o kernel
+
+cls:
+    push bp
+    mov bp,sp
+
+    ;mov ax, 0x0700
+    ;mov al, 0x0000
+    ;mov bh, 0x07
+    ;mov ch, 0x0000
+    ;mov dx, 0x184F
+
+    mov ah,0x07
+    mov al,0x00
+    mov bh,0x07
+    mov cx,0x00
+    mov dh,0x18
+    mov dl,0x4F
+
+    int 0x10
+
+    leave   
+    ;pop bp
+    ret
+
+set_pos:
+    push bp
+    mov bp,sp
+
+    mov ah,0x02 ; http://www.ctyme.com/intr/rb-0087.htm
+    mov bh,0x00 ; número da pagina (página 0)
+    mov dh,[bp+4] ; linha
+    mov dl,[bp+6] ; coluna
+
+    int 0x10 ; interrupção
+
+    leave
+    ;pop bp
+    ret
+
+print:
+    push bp
+    mov bp,sp
+
+    mov si, [ebp+4]
+    jmp ch_loop
+    ch_loop:lodsb
+       or al, al
+       jz done
+       mov ah, 0x0E
+       int 0x10
+       jmp ch_loop
+
+    done:
+    leave
+    ;pop bp
+    ret
+
+loadkernel:
+    push bp
+    mov bp,sp
+
+    mov ah,0x02 ; leia setor na memória
+    mov al,0x02 ; para ler 2 setores, 1024 bytes
+    mov ch,0x00
+    mov cl,0x02
+    mov dh,0x00
+    mov dl,0x00     ; do floppy a
+	mov bx,0x0820 ;sera carregado nesse endereco
+    mov es,bx
+    mov bx, 0x0000
+
+    int 0x13
+
+    leave
+    ;pop bp
+    ret
+
+load_gdt:
+
+	push bp
+	mov bp, sp
+	
+	mov ax, 0x7c0
+	mov ds, ax
+	
+	lgdt [gdt_ptr]
+	
+	leave
+	ret
+
+switchMP:
+	
+	push bp
+	mov bp, sp
+		
+	mov eax, cr0
+	or eax, 1
+	mov cr0, eax
+	
+	xchg bx, bx ;5
+	
+	mov ax, 0x10
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	mov ss, ax
+	
+	jmp 0x08:0x8200 ; comocada segmento tem 8 bytes, então 0x08
+
+gdt_ptr:
+	dw 24
+	dd 0x7c00 + gdt
+	
+gdt:
+	dd 0, 0  			  							; segmento nulo 
+	db 0xff, 0xff, 0, 0, 0, 10011010b, 11001111b, 0 ; segmento de códigos
+	db 0xff, 0xff, 0, 0, 0, 10010010b, 11001111b, 0 ; segmeto de dados
+
+msg    db 'Meu bootloader', 13, 10, 0
+msg2   db 'Carregando kernel', 13, 10, 0
+msg3   db 'Meu SO', 13, 10, 0
+
+   times 510-($-$$) db 0
+   db 0x55
+   db 0xAA
+
+;hang:
+   ;jmp hang
+
+; break point
+; xchg bx, bx

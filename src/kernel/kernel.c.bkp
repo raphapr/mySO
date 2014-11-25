@@ -1,0 +1,60 @@
+#include "gdt.h"
+#include "idt.h"
+#include "monitor.h"
+#include "timer.h"
+#include "keyboard.h"
+
+// main do kernel
+
+int kmain()
+{
+    //início
+    asm volatile ("xchg %bx, %bx");
+
+    monitor_clear(); //limpar a tela
+
+    //inicializar a gdt do kernel (independente do bootloader)
+    gdt_init();
+    monitor_write("gdt_init()\n\n");
+    
+    asm volatile ("xchg %bx, %bx"); // breakpoint 1
+    
+    //inicializar a idt (tabela de instruções)
+    idt_init(); 
+    monitor_write("idt_init()\n\n");
+
+    asm volatile ("xchg %bx, %bx"); // breakpoint 2
+
+    //activate interruptions
+    monitor_write("Ativando a flag de interrupcao (sti) \n\n");
+    asm volatile("sti"); 
+
+    asm volatile ("xchg %bx, %bx"); // breakpoint 3
+
+    //interrupções
+    monitor_write("Testando as interrupcoes (IRQ)\n");
+    monitor_write("int $0x6...\n");    
+    asm volatile ("int $0x6");
+    monitor_write("\n");
+    monitor_write("int $0x7...\n");    
+    asm volatile ("int $0x7");
+
+    asm volatile ("xchg %bx, %bx"); //break point 4
+
+/*
+    //timer
+    monitor_write("\nEntrando em timer...\n\n");    
+    asm volatile ("xchg %bx, %bx"); 
+    init_timer(100); //inicializando o timer na frequência definida
+*/
+
+
+    //teclado
+    monitor_write("\nHandler do teclado ativado!\n\n");
+    init_keyboard();
+
+
+    while(1);
+
+    return 1;
+}

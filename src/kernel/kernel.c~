@@ -1,0 +1,97 @@
+#include "gdt.h"
+#include "idt.h"
+#include "monitor.h"
+#include "timer.h"
+#include "keyboard.h"
+
+// main do kernel
+
+extern enable_paging(void);
+extern update_directory(unsigned int);
+
+    // paginação divide o espaço da memória virtual em vários blocos, chamados de pages, de normalmente 4KB de tamanho.
+
+ /*present     // Page present in memory*/
+ /*rw          // Read-only if clear, readwrite if set*/
+ /*user        // Supervisor level only if clear*/
+ /*accessed    // Has the page been accessed since last refresh?*/
+ /*dirty       // Has the page been written to since last refresh?*/
+ /*unused      // Amalgamation of unused and reserved bits*/
+ /*frame       // Frame address (shifted right 12 bits)*/
+
+typedef struct page_entry {
+	int present 		: 1; // página presente na memória
+	int read			: 1;
+	int user			: 1;
+	int write			: 1;
+	int cache			: 1;
+	int accessed		: 1;
+	int size			: 1;
+	int ignored			: 1;
+	int available		: 4;
+	int frame_base		: 20;
+} page_entry_t;
+
+typedef struct page_table {
+	
+	page_entry_t pages[1024];
+	
+} page_table_t;
+
+typedef struct page_dir {
+	
+	page_table_t* tables[1024];
+	
+} page_dir_t;
+
+
+int kmain()
+{
+    //início
+    asm volatile ("xchg %bx, %bx");
+
+    monitor_clear(); //limpar a tela
+
+    //inicializar a gdt do kernel (independente do bootloader)
+    gdt_init();
+    monitor_write("gdt_init()\n\n");
+    
+    asm volatile ("xchg %bx, %bx"); // breakpoint 1
+    
+    //inicializar a idt (tabela de instruções)
+    idt_init(); 
+    monitor_write("idt_init()\n\n");
+
+    asm volatile ("xchg %bx, %bx"); // breakpoint 2
+
+    //activate interruptions
+    //monitor_write("Ativando a flag de interrupcao (sti) \n\n");
+    //asm volatile("sti"); 
+
+    asm volatile ("xchg %bx, %bx"); // breakpoint 3
+
+    //interrupções
+    monitor_write("Testando interrupcao (IRQ)\n");
+    monitor_write("int $0x6...\n");    
+    asm volatile ("int $0x6");
+
+    asm volatile ("xchg %bx, %bx"); //break point 4
+
+/*
+    //timer
+    monitor_write("\nEntrando em timer...\n\n");    
+    asm volatile ("xchg %bx, %bx"); 
+    init_timer(100); //inicializando o timer na frequência definida
+*/
+
+
+    //teclado
+    monitor_write("\nHandler do teclado ativado!\n\n");
+    init_keyboard();
+    asm volatile ("xchg %bx, %bx"); 
+
+
+    while(1);
+
+    return 1;
+}
