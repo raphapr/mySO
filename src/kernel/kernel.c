@@ -2,12 +2,14 @@
 #include "idt.h"
 #include "monitor.h"
 #include "timer.h"
+#include "paging.h"
 #include "keyboard.h"
 
 // main do kernel
 
-extern enable_paging(void);
-extern update_directory(unsigned int);
+page_dir_t  	*directory = (page_dir_t*)   0x10000;
+page_table_t 	*table_0 = (page_table_t*) 0x11000, 
+				*table_1 = (page_table_t*) 0x12000;
 
     // paginação divide o espaço da memória virtual em vários blocos, chamados de pages, de normalmente 4KB de tamanho.
 
@@ -18,35 +20,11 @@ extern update_directory(unsigned int);
  /*dirty       // Has the page been written to since last refresh?*/
  /*unused      // Amalgamation of unused and reserved bits*/
  /*frame       // Frame address (shifted right 12 bits)*/
-
-typedef struct page_entry {
-	int present 		: 1; // página presente na memória
-	int read			: 1;
-	int user			: 1;
-	int write			: 1;
-	int cache			: 1;
-	int accessed		: 1;
-	int size			: 1;
-	int ignored			: 1;
-	int available		: 4;
-	int frame_base		: 20;
-} page_entry_t;
-
-typedef struct page_table {
-	
-	page_entry_t pages[1024];
-	
-} page_table_t;
-
-typedef struct page_dir {
-	
-	page_table_t* tables[1024];
-	
-} page_dir_t;
-
+// main do kernel
 
 int kmain()
 {
+    int i;
     //início
     asm volatile ("xchg %bx, %bx");
 
@@ -54,19 +32,19 @@ int kmain()
 
     //inicializar a gdt do kernel (independente do bootloader)
     gdt_init();
-    monitor_write("gdt_init()\n\n");
+    monitor_write("gdt_init()\n");
     
     asm volatile ("xchg %bx, %bx"); // breakpoint 1
     
     //inicializar a idt (tabela de instruções)
     idt_init(); 
-    monitor_write("idt_init()\n\n");
+    monitor_write("idt_init()\n");
 
     asm volatile ("xchg %bx, %bx"); // breakpoint 2
 
     //activate interruptions
     /*monitor_write("Ativando a flag de interrupcao (sti) \n\n");*/
-    /*asm volatile("sti"); */
+    asm volatile("sti");
 
     /*asm volatile ("xchg %bx, %bx"); // breakpoint 3*/
 
@@ -94,48 +72,61 @@ int kmain()
     //////////////////////////////////////////////////////////////////////
 	////////////////// criar minha tabela de página.
 	
-	int i;
-	
-	page_dir_t*  	directory;
-	page_table_t* 	table0;
-	
-	
-	directory = (page_dir_t*)   0x10000;
-	table0 	  = (page_table_t*) 0x11000;
-	
-	
-	int size = 4 * 1024;
-	for (i = 0; i < 1024; i++)
-	{
+	// FASE 1
+	for (i = 0; i < 1024; i++) {
 		
-		table0->pages[i].present 	 = 1;
-		table0->pages[i].read		 = 1;
-		table0->pages[i].user		 = 1;
-		table0->pages[i].write		 = 0;
-		table0->pages[i].frame_base = i;
+		table_0->pages[i].present 	 = 1;
+		table_0->pages[i].read		 = 1;
+		table_0->pages[i].user		 = 1;
+		table_0->pages[i].write		 = 0;
+		table_0->pages[i].frame_base = i;
 		
 	}
+
+	for (i = 0; i < 1024; i++) {
+		int cond;
+		if (!(i % 2)) {
+			cond = 0;
+		} else {
+			cond  = 1;		
+		}
+		table_1->pages[i].present 	 = cond;
+		table_1->pages[i].read		 = 1;
+		table_1->pages[i].user		 = 1;
+		table_1->pages[i].write		 = 0;
+		table_1->pages[i].frame_base = i + 2048;
+	}
 	
-	
-	int *tmp = (((unsigned int) table0) | 0x07);
-	
-	
-	
-	//test(directory->tables[0]);
-	//test(&(directory->tables[0]));
-	
-	directory->tables[0] = (page_table_t*) tmp;
+	directory->tables[0] = (((unsigned int) table_0) | 0x07);//?
+	directory->tables[1] = (((unsigned int) table_1) | 0x07);//?
 		
 	update_directory(directory);
 	
 	enable_paging();
+	monitor_write("Paginacao\n");
 
-    monitor_write("\nPaginacao...\n\n");
-    asm volatile ("xchg %bx, %bx"); //break point 6
+	asm volatile("xchg %bx, %bx");
+
+	// FASE 2
+	char *pagina11 =  0x40B000;
+	write_page(pagina11, "IC#", 3);
 	
-    //////////////////////////////////////////////////////////////////////
+	asm volatile ("xchg %bx, %bx");
 
-    while(1);
+	// FASE 3
+	
+	init_keyboard();
+	monitor_write("Teclado habilitado!\n"); 
+	asm volatile ("xchg %bx, %bx");
+	
+	//asm volatile ("xchg %bx, %bx");
+	//asm volatile ("int $0x3");
+	//asm volatile ("int $0x4");
 
-    return 1;
+	//init_timer(500); // Initialise timer to 50Hz 
+
+	while(1);
+	
+	return 1;
+
 }
